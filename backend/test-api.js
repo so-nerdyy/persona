@@ -2,24 +2,25 @@ const fetch = require('node-fetch');
 
 async function testAPI() {
     console.log('=== Testing API Endpoints ===\n');
-    
+
+    const baseUrl = 'http://localhost:3000'; // centralized base URL
     const sessionId = 'test-session-' + Date.now();
-    
+
     // Test GET (should return empty array)
     console.log('1. Testing GET /api/notes/' + sessionId);
     try {
-        const getRes = await fetch(`http://localhost:3000/api/notes/${sessionId}`);
+        const getRes = await fetch(`${baseUrl}/api/notes/${sessionId}`);
         console.log('   Status:', getRes.status);
         const getData = await getRes.json();
         console.log('   Response:', getData);
     } catch (err) {
         console.log('   Error:', err.message);
     }
-    
+
     // Test POST
     console.log('\n2. Testing POST /api/notes');
     try {
-        const postRes = await fetch('http://localhost:3000/api/notes', {
+        const postRes = await fetch(`${baseUrl}/api/notes`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -34,9 +35,8 @@ async function testAPI() {
     } catch (err) {
         console.log('   Error:', err.message);
     }
-    
+
     console.log('\nDone!');
 }
 
 testAPI();
-

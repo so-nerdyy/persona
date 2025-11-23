@@ -17,7 +17,7 @@ const {
 const JWT_SECRET = process.env.JWT_SECRET || "your-secret-key-change-in-production";
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 // Middleware
 app.use(cors());
