@@ -3,7 +3,7 @@ const fetch = require('node-fetch');
 async function testAPI() {
     console.log('=== Testing API Endpoints ===\n');
 
-    const baseUrl = 'http://localhost:3000'; // centralized base URL
+    const baseUrl = "https://deca-app-final.onrender.com"; // centralized base URL
     const sessionId = 'test-session-' + Date.now();
 
     // Test GET (should return empty array)
