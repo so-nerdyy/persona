@@ -152,7 +152,9 @@ export const useRoleplay = () => {
             }
         } else {
             // Show interim results
+            console.log("⏳ INTERIM - Setting currentTranscript to:", text);
             setCurrentTranscript(text);
+            console.log("✅ currentTranscript state should now be:", text);
         }
     }, [isWaitingForClarification, isJudgeSpeaking]);
 
