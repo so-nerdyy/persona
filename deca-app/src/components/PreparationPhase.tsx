@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Clock, BookOpen, Timer, Plus, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import type { RoleplayScenario } from "../services/ai";
@@ -8,18 +8,24 @@ interface PreparationPhaseProps {
   scenario: RoleplayScenario;
   preparationTimeLeft: number;
   notes: Note[];
-  setNotes: (notes: Note[]) => void;
+  setNotes: React.Dispatch<React.SetStateAction<Note[]>>;
   onSkipPreparation: () => void;
 }
 
 export const PreparationPhase: React.FC<PreparationPhaseProps> = ({
   scenario,
   preparationTimeLeft,
-  notes,
-  setNotes,
+  notes: propNotes,
+  setNotes: propSetNotes,
   onSkipPreparation,
 }) => {
+  const [localNotes, setLocalNotes] = useState<Note[]>(propNotes);
   const [expandedNoteId, setExpandedNoteId] = useState<string | null>(null);
+
+  // Sync local notes to props for persistence
+  useEffect(() => {
+    propSetNotes(localNotes);
+  }, [localNotes, propSetNotes]);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -40,19 +46,22 @@ export const PreparationPhase: React.FC<PreparationPhaseProps> = ({
       content: '',
     };
     console.log("✅ New note created:", newNote);
-    setNotes([...notes, newNote]);
+    const newNotes = [...localNotes, newNote];
+    console.log("📝 Note added to list, total notes:", newNotes.length);
+    setLocalNotes(newNotes);
     setExpandedNoteId(newNote.id);
-    console.log("📝 Note added to list, total notes:", notes.length + 1);
   };
 
   const updateNote = (id: string, updates: Partial<Note>) => {
     console.log("✏️ Updating note:", id, updates);
-    setNotes(notes.map(note => note.id === id ? { ...note, ...updates } : note));
+    const newNotes = localNotes.map(note => note.id === id ? { ...note, ...updates } : note);
+    setLocalNotes(newNotes);
   };
 
   const deleteNote = (id: string) => {
     console.log("🗑️ Deleting note:", id);
-    setNotes(notes.filter(note => note.id !== id));
+    const newNotes = localNotes.filter(note => note.id !== id);
+    setLocalNotes(newNotes);
     if (expandedNoteId === id) {
       setExpandedNoteId(null);
     }
@@ -283,24 +292,22 @@ export const PreparationPhase: React.FC<PreparationPhaseProps> = ({
                 Preparation Notes
               </h3>
             </div>
-            <motion.button
+            <button
               type="button"
               onClick={() => {
                 console.log("🖱️ Add Note button clicked!");
                 addNote();
               }}
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              className="px-4 py-2.5 bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-xl hover:from-blue-600 hover:to-purple-600 transition-all flex items-center gap-2 text-sm font-bold shadow-xl glow-primary"
+              className="px-4 py-2.5 bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-xl hover:from-blue-600 hover:to-purple-600 transition-all flex items-center gap-2 text-sm font-bold shadow-xl glow-primary hover:scale-105 active:scale-95"
             >
               <Plus size={18} />
               Add Note
-            </motion.button>
+            </button>
           </div>
 
           <div className="flex-1 space-y-3 overflow-y-auto" style={{ maxHeight: '400px' }}>
             <AnimatePresence>
-              {notes.length === 0 ? (
+              {localNotes.length === 0 ? (
                 <motion.div
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
@@ -311,7 +318,7 @@ export const PreparationPhase: React.FC<PreparationPhaseProps> = ({
                   <p className="text-sm">No notes yet. Click "Add Note" to start.</p>
                 </motion.div>
               ) : (
-                notes.map((note, index) => (
+                localNotes.map((note, index) => (
                   <motion.div
                     key={note.id}
                     initial={{ opacity: 0, y: 10 }}
