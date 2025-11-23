@@ -69,7 +69,7 @@ export const FeedbackCard: React.FC<FeedbackCardProps> = ({
   }));
 
   return (
-    <div className="w-screen h-screen bg-slate-900 overflow-auto">
+    <div className="w-full min-h-screen bg-slate-900 overflow-auto py-4">
       {/* Background Elements */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         {orbs.map((orb) => (
@@ -96,14 +96,14 @@ export const FeedbackCard: React.FC<FeedbackCardProps> = ({
         ))}
       </div>
 
-      <div className="relative z-10 min-h-screen p-4 sm:p-6 lg:p-8">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 lg:gap-8 max-w-6xl mx-auto">
+      <div className="relative z-10 p-3 sm:p-4 md:p-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4 max-w-5xl mx-auto">
           {/* Score Card */}
           <motion.div
             initial={{ opacity: 0, y: 30, scale: 0.9 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             transition={{ duration: 0.6, ease: "easeOut" }}
-            className="lg:sticky lg:top-8 lg:h-fit panel-elevated rounded-2xl p-6 sm:p-8 lg:p-10 flex flex-col items-center justify-center text-center relative overflow-hidden gradient-border hover-lift bg-slate-800/50 backdrop-blur"
+            className="lg:sticky lg:top-8 lg:h-fit panel-elevated rounded-2xl p-4 sm:p-5 md:p-6 flex flex-col items-center justify-center text-center relative overflow-hidden gradient-border hover-lift bg-slate-800/50 backdrop-blur"
           >
             {/* Animated background gradient */}
             <motion.div

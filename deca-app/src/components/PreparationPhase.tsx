@@ -33,20 +33,25 @@ export const PreparationPhase: React.FC<PreparationPhaseProps> = ({
   const timePercentage = (preparationTimeLeft / totalPrepTime) * 100;
 
   const addNote = () => {
+    console.log("➕ Adding new note...");
     const newNote: Note = {
       id: Date.now().toString(),
       title: '',
       content: '',
     };
+    console.log("✅ New note created:", newNote);
     setNotes([...notes, newNote]);
     setExpandedNoteId(newNote.id);
+    console.log("📝 Note added to list, total notes:", notes.length + 1);
   };
 
   const updateNote = (id: string, updates: Partial<Note>) => {
+    console.log("✏️ Updating note:", id, updates);
     setNotes(notes.map(note => note.id === id ? { ...note, ...updates } : note));
   };
 
   const deleteNote = (id: string) => {
+    console.log("🗑️ Deleting note:", id);
     setNotes(notes.filter(note => note.id !== id));
     if (expandedNoteId === id) {
       setExpandedNoteId(null);
@@ -280,12 +285,15 @@ export const PreparationPhase: React.FC<PreparationPhaseProps> = ({
             </div>
             <motion.button
               type="button"
-              onClick={addNote}
+              onClick={() => {
+                console.log("🖱️ Add Note button clicked!");
+                addNote();
+              }}
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
-              className="px-3 py-2 bg-gradient-primary text-white rounded-lg hover:opacity-90 transition-opacity flex items-center gap-2 text-sm font-semibold shadow-lg glow-primary"
+              className="px-4 py-2.5 bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-xl hover:from-blue-600 hover:to-purple-600 transition-all flex items-center gap-2 text-sm font-bold shadow-xl glow-primary"
             >
-              <Plus size={16} />
+              <Plus size={18} />
               Add Note
             </motion.button>
           </div>

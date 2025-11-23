@@ -9,6 +9,8 @@ const {
   generateScenario,
   chatTurnStream,
   gradeRoleplay,
+  shouldInterruptPresentation,
+  generateJudgeFollowUp,
 } = require("./aiService");
 
 // JWT Secret (in production, move to .env)
@@ -278,6 +280,57 @@ app.post("/api/ai/grade", authenticateToken, async (req, res) => {
     res
       .status(500)
       .json({ error: error.message || "Failed to grade roleplay" });
+  }
+});
+
+// POST: Check if judge should interrupt (STRICT MODE)
+app.post("/api/ai/should-interrupt", authenticateToken, async (req, res) => {
+  const { recentTranscript, difficulty, interruptCount, judgePersona } = req.body;
+
+  if (!recentTranscript || !difficulty || interruptCount === undefined || !judgePersona) {
+    return res.status(400).json({
+      error: "recentTranscript, difficulty, interruptCount, and judgePersona required",
+    });
+  }
+
+  try {
+    const result = await shouldInterruptPresentation(
+      recentTranscript,
+      difficulty,
+      interruptCount,
+      judgePersona
+    );
+    res.json(result);
+  } catch (error) {
+    console.error("Error checking interruption:", error);
+    res.status(500).json({ shouldInterrupt: false });
+  }
+});
+
+// POST: Generate judge follow-up
+app.post("/api/ai/judge-followup", authenticateToken, async (req, res) => {
+  const { conversationHistory, userResponse, difficulty, judgePersona } = req.body;
+
+  if (!conversationHistory || !userResponse || !difficulty || !judgePersona) {
+    return res.status(400).json({
+      error: "conversationHistory, userResponse, difficulty, judgePersona required",
+    });
+  }
+
+  try {
+    const result = await generateJudgeFollowUp(
+      conversationHistory,
+      userResponse,
+      difficulty,
+      judgePersona
+    );
+    res.json(result);
+  } catch (error) {
+    console.error("Error generating follow-up:", error);
+    res.status(500).json({
+      continuePresentation: true,
+      text: "Umm, okay, continue.",
+    });
   }
 });
 

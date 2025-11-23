@@ -22,6 +22,8 @@ function App() {
     error,
     preparationTimeLeft,
     presentationTimeLeft,
+    isJudgeSpeaking,
+    isWaitingForClarification,
     notes,
     setNotes,
     startScenario,
@@ -192,6 +194,8 @@ function App() {
                    messages={messages}
                    currentTranscript={currentTranscript}
                    presentationTimeLeft={presentationTimeLeft}
+                   isJudgeSpeaking={isJudgeSpeaking}
+                   isWaitingForClarification={isWaitingForClarification}
                    onFinish={finishRoleplay}
                    showScenario={false}
                    notes={notes}

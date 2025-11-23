@@ -9,6 +9,8 @@ interface RoleplaySessionProps {
     messages: Message[];
     currentTranscript: string;
     presentationTimeLeft?: number;
+    isJudgeSpeaking?: boolean;
+    isWaitingForClarification?: boolean;
     onFinish: () => void;
     showScenario?: boolean;
     notes?: Note[];
@@ -19,6 +21,8 @@ export const RoleplaySession: React.FC<RoleplaySessionProps> = ({
     messages,
     currentTranscript,
     presentationTimeLeft = 600,
+    isJudgeSpeaking = false,
+    isWaitingForClarification = false,
     onFinish,
     showScenario = true,
     notes = [],
@@ -31,6 +35,31 @@ export const RoleplaySession: React.FC<RoleplaySessionProps> = ({
         const mins = Math.floor(seconds / 60);
         const secs = seconds % 60;
         return `${mins}:${secs.toString().padStart(2, '0')}`;
+    };
+
+    // Determine display mode
+    const getStatusLabel = () => {
+        if (isJudgeSpeaking) return "Judge is Speaking...";
+        if (isWaitingForClarification) return "Respond to Judge";
+        return "Recording Presentation";
+    };
+
+    const getMicColor = () => {
+        if (isJudgeSpeaking) return "from-yellow-500 to-yellow-600";
+        if (isWaitingForClarification) return "from-blue-500 to-blue-600";
+        return "from-red-500 to-red-600";
+    };
+
+    const getIndicatorColor = () => {
+        if (isJudgeSpeaking) return "bg-yellow-400";
+        if (isWaitingForClarification) return "bg-blue-400";
+        return "bg-red-400";
+    };
+
+    const getStatusBadge = () => {
+        if (isJudgeSpeaking) return "JUDGE SPEAKING";
+        if (isWaitingForClarification) return "YOUR TURN";
+        return "RECORDING";
     };
 
     useEffect(() => {
@@ -249,34 +278,53 @@ export const RoleplaySession: React.FC<RoleplaySessionProps> = ({
                                 whileHover={{ scale: 1.05 }}
                                 whileTap={{ scale: 0.95 }}
                                 className="relative group cursor-pointer touch-target"
+                                animate={{
+                                    scale: isJudgeSpeaking ? [1, 1.08, 1] : 1
+                                }}
+                                transition={{
+                                    repeat: isJudgeSpeaking ? Infinity : 0,
+                                    duration: 1.5
+                                }}
                             >
-                                <div className="absolute inset-0 bg-gradient-to-r from-red-500 to-pink-500 rounded-2xl blur-lg opacity-30 group-hover:opacity-50 transition-all duration-300 animate-pulse"></div>
-                                <div className="relative w-12 h-12 xs:w-14 xs:h-14 bg-gradient-to-br from-red-500 to-red-600 rounded-2xl flex items-center justify-center text-white shadow-xl shadow-red-500/30 group-hover:shadow-red-500/50 transition-all duration-300 glow">
-                                    <Mic size={22} className="xs:w-7 xs:h-7 drop-shadow-lg" />
+                                <div className={`absolute inset-0 rounded-2xl blur-lg opacity-30 group-hover:opacity-50 transition-all duration-300 animate-pulse bg-gradient-to-r ${
+                                    isJudgeSpeaking ? 'from-yellow-500 to-orange-500' :
+                                    isWaitingForClarification ? 'from-blue-500 to-cyan-500' :
+                                    'from-red-500 to-pink-500'
+                                }`}></div>
+                                <div className={`relative w-12 h-12 xs:w-14 xs:h-14 rounded-2xl flex items-center justify-center text-white shadow-xl transition-all duration-300 glow bg-gradient-to-br ${getMicColor()}`}>
+                                    {isJudgeSpeaking ? <Bot size={22} className="xs:w-7 xs:h-7 drop-shadow-lg" /> : <Mic size={22} className="xs:w-7 xs:h-7 drop-shadow-lg" />}
                                 </div>
                             </motion.div>
                             <div className="space-y-1 xs:space-y-2 flex-1 xs:flex-initial">
                                 <div className="flex items-center gap-2 xs:gap-3">
-                                    <span className="text-white font-bold font-display text-base xs:text-lg">Recording Presentation</span>
-                                    <div className="flex gap-1 items-end h-3 xs:h-4">
-                                        {[1, 2, 3, 4, 5].map(i => (
-                                            <motion.div
-                                                key={i}
-                                                animate={{ height: [4, 12, 4] }}
-                                                transition={{ repeat: Infinity, duration: 0.8, delay: i * 0.1, ease: "easeInOut" }}
-                                                className="w-1 xs:w-1.5 bg-gradient-to-t from-red-400 to-red-500 rounded-full shadow-sm"
-                                            />
-                                        ))}
-                                    </div>
+                                    <span className="text-white font-bold font-display text-base xs:text-lg">{getStatusLabel()}</span>
+                                    {!isJudgeSpeaking && (
+                                        <div className="flex gap-1 items-end h-3 xs:h-4">
+                                            {[1, 2, 3, 4, 5].map(i => (
+                                                <motion.div
+                                                    key={i}
+                                                    animate={{ height: [4, 12, 4] }}
+                                                    transition={{ repeat: Infinity, duration: 0.8, delay: i * 0.1, ease: "easeInOut" }}
+                                                    className={`w-1 xs:w-1.5 bg-gradient-to-t rounded-full shadow-sm ${
+                                                        isWaitingForClarification ? 'from-blue-400 to-blue-500' : 'from-red-400 to-red-500'
+                                                    }`}
+                                                />
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
                                 <div className="flex flex-wrap items-center gap-2 xs:gap-4">
                                     <div className="text-xs sm:text-sm font-mono flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-500/20 border border-blue-500/30">
                                         <span className="text-blue-300 font-bold">{formatTime(presentationTimeLeft)}</span>
                                         <span className="text-gray-400">remaining</span>
                                     </div>
-                                    <div className="flex items-center gap-1 text-xs text-gray-400">
-                                        <div className="w-2 h-2 bg-red-400 rounded-full animate-pulse"></div>
-                                        <span>RECORDING</span>
+                                    <div className={`flex items-center gap-1 text-xs px-2 py-1 rounded-full border ${
+                                        isJudgeSpeaking ? 'border-yellow-500/30 bg-yellow-500/10' :
+                                        isWaitingForClarification ? 'border-blue-500/30 bg-blue-500/10' :
+                                        'border-red-500/30 bg-red-500/10'
+                                    }`}>
+                                        <div className={`w-2 h-2 ${getIndicatorColor()} rounded-full animate-pulse`}></div>
+                                        <span className="text-gray-300 font-medium text-xs">{getStatusBadge()}</span>
                                     </div>
                                 </div>
                             </div>

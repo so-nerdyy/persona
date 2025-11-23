@@ -237,3 +237,73 @@ export const saveRoleplay = async (data: {
     throw error;
   }
 };
+
+/**
+ * Check if judge should interrupt (STRICT MODE)
+ */
+export const checkShouldInterrupt = async (
+  recentTranscript: string,
+  difficulty: Difficulty,
+  interruptCount: number,
+  judgePersona: string
+): Promise<{ shouldInterrupt: boolean; question?: string }> => {
+  try {
+    console.log("🤔 Checking if judge should interrupt (STRICT MODE)...");
+    const response = await fetch(`${BACKEND_URL}/api/ai/should-interrupt`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({
+        recentTranscript,
+        difficulty,
+        interruptCount,
+        judgePersona,
+      }),
+    });
+
+    if (!response.ok) {
+      return { shouldInterrupt: false };
+    }
+
+    const result = await response.json();
+    console.log("📊 Interrupt result:", result);
+    return result;
+  } catch (error) {
+    console.error("❌ Error checking interruption:", error);
+    return { shouldInterrupt: false };
+  }
+};
+
+/**
+ * Get judge's follow-up after clarification
+ */
+export const getJudgeFollowUp = async (
+  conversationHistory: { role: string; text: string }[],
+  userResponse: string,
+  difficulty: Difficulty,
+  judgePersona: string
+): Promise<{ continuePresentation: boolean; text: string }> => {
+  try {
+    console.log("🤔 Getting judge follow-up...");
+    const response = await fetch(`${BACKEND_URL}/api/ai/judge-followup`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({
+        conversationHistory,
+        userResponse,
+        difficulty,
+        judgePersona,
+      }),
+    });
+
+    if (!response.ok) {
+      return { continuePresentation: true, text: "Umm, okay, continue." };
+    }
+
+    const result = await response.json();
+    console.log("📊 Follow-up result:", result);
+    return result;
+  } catch (error) {
+    console.error("❌ Error getting follow-up:", error);
+    return { continuePresentation: true, text: "Umm, okay, continue." };
+  }
+};
