@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { generateScenario, getAIResponse, gradeRoleplay, saveRoleplay, checkShouldInterrupt, getJudgeFollowUp, type RoleplayScenario, type Difficulty } from '../services/ai';
+import { generateScenario, getAIResponseStream, gradeRoleplay, saveRoleplay, checkShouldInterrupt, getJudgeFollowUp, type RoleplayScenario, type Difficulty } from '../services/ai';
 import { speechService } from '../services/speech';
 
 export type GameState = 'IDLE' | 'GENERATING' | 'PREPARING' | 'PLAYING' | 'GRADING' | 'FINISHED';
@@ -35,11 +35,17 @@ export const useRoleplay = () => {
         }
     });
 
+    // Presentation state
+    const [isPresenting, setIsPresenting] = useState(false);
+
     // Interruption state
-    const [interruptCount, setInterruptCount] = useState(0);
+    const [_interruptCount, setInterruptCount] = useState(0);
     const [isJudgeSpeaking, setIsJudgeSpeaking] = useState(false);
-    const [transcriptBuffer, setTranscriptBuffer] = useState<string[]>([]);
+    const [_transcriptBuffer, setTranscriptBuffer] = useState<string[]>([]);
     const [isWaitingForClarification, setIsWaitingForClarification] = useState(false);
+
+    // Greeting detection regex
+    const greetingRegex = /^(hi|hello|good\s+(morning|afternoon|evening)|hey|howdy|salutations)/i;
 
     const silenceTimer = useRef<any>(null);
     const isAIProcessing = useRef(false);
@@ -108,20 +114,76 @@ export const useRoleplay = () => {
         }
     };
 
-    const handleUserSpeech = useCallback((text: string, isFinal: boolean) => {
+    const generateAIResponse = useCallback(async (userInput: string) => {
+        if (isAIProcessing.current || !scenarioRef.current) {
+            console.log("⏭️ Skipping AI response - already processing or no scenario");
+            return;
+        }
+
+        isAIProcessing.current = true;
+        setIsJudgeSpeaking(true);
+
+        try {
+            console.log("🤖 Calling AI with conversation history...");
+            const currentMessages = messages.map(m => ({
+                role: m.role as 'user' | 'model',
+                parts: m.text
+            }));
+
+            // Add the current user input to the history
+            currentMessages.push({
+                role: 'user',
+                parts: userInput
+            });
+
+            let aiResponse = '';
+
+            await getAIResponseStream(
+                currentMessages,
+                scenarioRef.current.judgePersona,
+                difficultyRef.current,
+                (chunk: string) => {
+                    aiResponse += chunk;
+                }
+            );
+
+            console.log("✅ AI Response received:", aiResponse);
+
+            // Add AI response to messages
+            setMessages(prev => [...prev, { role: 'model', text: aiResponse }]);
+
+            // Speak the response
+            speechService.speak(aiResponse, () => {
+                console.log("✅ Judge finished speaking response");
+                setIsJudgeSpeaking(false);
+                isAIProcessing.current = false;
+                // Resume listening after AI response
+                setTimeout(() => startListeningLoop(), 200);
+            });
+
+        } catch (error) {
+            console.error("❌ AI Response error:", error);
+            setIsJudgeSpeaking(false);
+            isAIProcessing.current = false;
+            // Resume listening even on error
+            setTimeout(() => startListeningLoop(), 200);
+        }
+    }, [messages]);
+
+    const handleUserSpeech = useCallback((text: string, isFinal?: boolean) => {
         console.log(`🗣️ Speech received (${isFinal ? 'FINAL' : 'interim'}):`, text);
-        
+
         if (isFinal && text.trim().length > 0) {
             console.log("✅ Adding to transcript:", text);
-            
+
             // Add to full transcript
             setFullTranscript(prev => prev ? `${prev} ${text}` : text);
-            
+
             // Add to messages for display
             setMessages(prev => [...prev, { role: 'user', text: text }]);
-            
+
             setCurrentTranscript('');
-            
+
             // Handle based on mode
             if (isWaitingForClarification) {
                 // This is a response to judge's question
@@ -130,25 +192,37 @@ export const useRoleplay = () => {
             } else {
                 // Normal presentation - check for interruption
                 console.log("📝 Normal presentation mode, checking for interrupt...");
-                speechCountRef.current += 1;
-                
-                setTranscriptBuffer(prev => {
-                    const newBuffer = [...prev, text];
-                    console.log("🔄 Buffer updated, length:", newBuffer.length);
-                    
-                    // Check IMMEDIATELY after every speech
-                    if (speechCountRef.current >= 1) {
-                        console.log("✅ Triggering interrupt check with buffer:", newBuffer);
-                        speechCountRef.current = 0;
-                        // Call with the new buffer
-                        setTimeout(() => {
-                            console.log("⏰ Timeout fired, calling checkForInterrupt...");
-                            checkForInterrupt(newBuffer);
-                        }, 500);
-                    }
-                    
-                    return newBuffer;
-                });
+                const isGreeting = greetingRegex.test(text);
+                if (isGreeting) {
+                    console.log("Greeting detected, generating AI response without interrupt check");
+                    generateAIResponse(text);
+                } else {
+                    speechCountRef.current += 1;
+
+                    setTranscriptBuffer(prev => {
+                        const newBuffer = [...prev, text];
+                        console.log("🔄 Buffer updated, length:", newBuffer.length);
+
+                        // Check IMMEDIATELY after every speech
+                        if (speechCountRef.current >= 1) {
+                            console.log("✅ Triggering interrupt check with buffer:", newBuffer);
+                            speechCountRef.current = 0;
+                            // Call with the new buffer
+                            setTimeout(() => {
+                                console.log("⏰ Timeout fired, calling checkForInterrupt...");
+                                checkForInterrupt(newBuffer).then((interrupted) => {
+                                    // Only generate AI response if no interruption occurred
+                                    if (!interrupted) {
+                                        console.log("🤖 No interruption, generating AI response with conversation history...");
+                                        generateAIResponse(text);
+                                    }
+                                });
+                            }, 500);
+                        }
+
+                        return newBuffer;
+                    });
+                }
             }
         } else {
             // Show interim results
@@ -158,7 +232,7 @@ export const useRoleplay = () => {
         }
     }, [isWaitingForClarification, isJudgeSpeaking]);
 
-    const checkForInterrupt = async (buffer: string[]) => {
+    const checkForInterrupt = async (buffer: string[]): Promise<boolean> => {
         // Use refs to get current values
         const currentScenario = scenarioRef.current;
         const currentDifficulty = difficultyRef.current;
@@ -178,26 +252,26 @@ export const useRoleplay = () => {
 
         if (currentInterruptCount >= maxInterrupts) {
             console.log("⏭️ Skip: Already at max interrupts", currentInterruptCount, "/", maxInterrupts);
-            return;
+            return false;
         }
 
         if (!currentScenario) {
             console.error("❌ CRITICAL: No scenario available!", currentScenario);
-            return;
+            return false;
         }
 
         if (isJudgeSpeaking) {
             console.log("⏭️ Skip: Judge is currently speaking");
-            return;
+            return false;
         }
 
         // Get last 1-2 sentences
         const recentText = buffer.slice(-2).join(' ');
         console.log("📝 Recent text to analyze:", recentText);
-        
+
         if (recentText.length < 10) {
             console.log("⏭️ Skip: Text too short (", recentText.length, "chars )");
-            return;
+            return false;
         }
 
         try {
@@ -220,11 +294,14 @@ export const useRoleplay = () => {
             if (result.shouldInterrupt && result.question) {
                 console.log("⚠️⚠️⚠️ JUDGE WILL INTERRUPT NOW!");
                 handleJudgeInterruption(result.question);
+                return true;
             } else {
                 console.log("✅ AI decided NOT to interrupt");
+                return false;
             }
         } catch (error) {
             console.error("❌ Interrupt check error:", error);
+            return false;
         }
     };
 
@@ -392,6 +469,7 @@ export const useRoleplay = () => {
         speechService.speak(initialMessage, () => {
             console.log("🎤 Starting to listen for presentation...");
             startListeningLoop();
+            setIsPresenting(true);
         });
     };
 

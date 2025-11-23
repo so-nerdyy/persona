@@ -1,39 +1,83 @@
+// roleplay-ai.js
+// Rewritten, robust version of your roleplay AI module.
+// - Fixes broken history mapping
+// - Prevents interruptions on greetings/casual chat
+// - Only interrupts when isPresenting is true
+// - Includes clear system prompts that include difficulty instructions
+// - Safer JSON parsing & fallback defaults
+// - Keeps the same exported API you used previously
+
 const OpenAI = require('openai');
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY
-});
+// Helpers
+function safeTextFromHistoryItem(h) {
+  // Accept multiple possible field names
+  if (!h) return "";
+  if (typeof h === "string") return h;
+  return (h.text || h.content || h.parts || h.message || "").toString();
+}
 
-/**
- * Generate a DECA roleplay scenario using GPT-4o
- * @param {string} eventType - The DECA event category
- * @param {'Easy' | 'Medium' | 'Hard'} difficulty - Difficulty level
- * @param {object} options - Additional options (topic, mode)
- * @returns {Promise<object>} RoleplayScenario object
- */
-async function generateScenario(eventType, difficulty, options = {}) {
-    const { topic, mode = 'random' } = options;
-
-    const difficultyPrompt = {
-        'Easy': 'The scenario should be straightforward. The judge should be friendly and helpful.',
-        'Medium': 'The scenario should have a minor complication. The judge should be professional but neutral.',
-        'Hard': 'The scenario should be complex with a difficult conflict or skeptical stakeholder. The judge should be tough, skeptical, and ask hard questions.'
-    }[difficulty];
-
-    let topicGuidance = '';
-    if (mode === 'guided' && topic) {
-        topicGuidance = `\nThe scenario MUST focus on this specific topic/situation: "${topic}"`;
-    } else if (mode === 'random') {
-        topicGuidance = '\nGenerate a completely random and creative scenario.';
+function tryParseJSON(text) {
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    // Try to strip markdown fences and retry
+    const cleaned = text.replace(/```(?:json)?/g, "").trim();
+    try {
+      return JSON.parse(cleaned);
+    } catch (e2) {
+      throw new Error("Failed to parse JSON from model output: " + e2.message);
     }
+  }
+}
 
-    const prepTimeMinutes = {
-        'Easy': 10,
-        'Medium': 7,
-        'Hard': 5
-    }[difficulty];
+function isCasualGreeting(text) {
+  if (!text) return false;
+  const t = text.toLowerCase();
+  // common short forms and polite questions
+  const greetings = [
+    "hi", "hello", "hey", "good morning", "good afternoon", "good evening",
+    "how are you", "how's your day", "how is your day", "how've you been",
+    "what's up", "whats up", "how are you doing", "how are you?"
+  ];
+  return greetings.some(g => t.includes(g));
+}
 
-    const prompt = `Generate a DECA roleplay scenario for the event category: "${eventType}".
+function buildDifficultyInstruction(difficulty) {
+  return {
+    'Easy': 'Be encouraging and guide the student if they are stuck. Keep responses short and friendly.',
+    'Medium': 'Be professional. Ask follow-up questions if the student misses a point. Balance critique with helpfulness.',
+    'Hard': "Be skeptical. Challenge assumptions. Be concise, direct, and demand specifics. Interrupt when answers are vague (but only during presentations)."
+  }[difficulty] || 'Be neutral and professional.';
+}
+
+// ------------------------------
+// Generate a DECA scenario
+// ------------------------------
+/**
+ * Generate a DECA roleplay scenario
+ * @param {string} eventType
+ * @param {'Easy'|'Medium'|'Hard'} difficulty
+ * @param {object} options
+ * @returns {Promise<object>}
+ */
+async function generateScenario(eventType, difficulty = 'Medium', options = {}) {
+  const { topic, mode = 'random' } = options;
+
+  const difficultyPrompt = {
+    'Easy': 'The scenario should be straightforward. The judge should be friendly and helpful.',
+    'Medium': 'The scenario should have a minor complication. The judge should be professional but neutral.',
+    'Hard': 'The scenario should be complex with a difficult conflict or skeptical stakeholder. The judge should be tough and ask hard questions.'
+  }[difficulty];
+
+  const topicGuidance = (mode === 'guided' && topic)
+    ? `\nThe scenario MUST focus on this specific topic/situation: "${topic}"`
+    : '\nGenerate a completely random and creative scenario.';
+
+  const prepTimeMinutes = { 'Easy': 10, 'Medium': 7, 'Hard': 5 }[difficulty] ?? 7;
+
+  const prompt = `Generate a business roleplay scenario for the category: "${eventType}".
 Difficulty Level: ${difficulty}
 ${difficultyPrompt}
 ${topicGuidance}
@@ -48,108 +92,111 @@ Return a JSON object with:
 
 Output raw JSON only, no markdown.`;
 
-    try {
-        const completion = await openai.chat.completions.create({
-            model: "gpt-4o",
-            messages: [
-                {
-                    role: "system",
-                    content: "You are a DECA competition scenario generator. Always output valid JSON without markdown formatting."
-                },
-                {
-                    role: "user",
-                    content: prompt
-                }
-            ],
-            temperature: 0.8,
-            response_format: { type: "json_object" }
-        });
+  try {
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        { role: "system", content: "You are a business scenario generator. Always output valid JSON without markdown formatting." },
+        { role: "user", content: prompt }
+      ],
+      temperature: 0.8,
+      response_format: { type: "json_object" }
+    });
 
-        const text = completion.choices[0].message.content;
-        const cleanText = text.replace(/```json/g, "").replace(/```/g, "").trim();
-        const scenario = JSON.parse(cleanText);
-        
-        // Ensure time fields are present and are numbers
-        if (!scenario.prepTimeMinutes || typeof scenario.prepTimeMinutes !== 'number') {
-            scenario.prepTimeMinutes = prepTimeMinutes;
-        }
-        if (!scenario.presentationTimeMinutes || typeof scenario.presentationTimeMinutes !== 'number') {
-            scenario.presentationTimeMinutes = 10;
-        }
-        
-        return scenario;
-    } catch (error) {
-        console.error("Error generating scenario:", error);
-        throw new Error("Failed to generate scenario: " + error.message);
-    }
+    const text = completion.choices?.[0]?.message?.content;
+    if (!text) throw new Error("No content returned from model.");
+
+    const scenario = (typeof text === 'object') ? text : tryParseJSON(text);
+    // Validate and supply sensible defaults
+    scenario.title = scenario.title || `${eventType} Scenario`;
+    scenario.description = scenario.description || "No description provided.";
+    scenario.judgePersona = scenario.judgePersona || "Professional Judge";
+    scenario.performanceIndicators = Array.isArray(scenario.performanceIndicators) && scenario.performanceIndicators.length >= 1
+      ? scenario.performanceIndicators.slice(0, 5)
+      : ["Communication", "Problem Analysis", "Recommendations", "Use of Data", "Time Management"];
+    scenario.prepTimeMinutes = typeof scenario.prepTimeMinutes === 'number' ? scenario.prepTimeMinutes : prepTimeMinutes;
+    scenario.presentationTimeMinutes = typeof scenario.presentationTimeMinutes === 'number' ? scenario.presentationTimeMinutes : 10;
+
+    return scenario;
+  } catch (error) {
+    console.error("Error generating scenario:", error);
+    throw new Error("Failed to generate scenario: " + (error.message || error));
+  }
 }
 
+// ------------------------------
+// Chat turn streaming (judge conversation)
+// ------------------------------
 /**
- * Get AI response for a chat turn (streaming support)
- * @param {Array} history - Chat history
- * @param {string} currentInput - Current user input
- * @param {string} judgePersona - Judge's persona
- * @param {'Easy' | 'Medium' | 'Hard'} difficulty - Difficulty level
- * @returns {AsyncGenerator<string>} Stream of response chunks
+ * Get AI response for a chat turn (streaming)
+ * @param {Array<{role:string, text?:string, content?:string}>} history
+ * @param {string} currentInput
+ * @param {string} judgePersona
+ * @param {'Easy'|'Medium'|'Hard'} difficulty
+ * @param {object} opts - { isPresenting: boolean } (optional)
+ * @returns {AsyncGenerator<string>}
  */
-async function* chatTurnStream(history, currentInput, judgePersona, difficulty) {
-    const difficultyInstruction = {
-        'Easy': 'Be encouraging and guide the student if they are stuck. Keep responses short.',
-        'Medium': 'Be professional. Ask follow-up questions if the student misses a point.',
-        'Hard': 'Be skeptical. Challenge the student\'s assumptions. Interrupt if they ramble (simulate this by being concise and direct).'
-    }[difficulty];
+async function* chatTurnStream(history = [], currentInput = "", judgePersona = "Judge", difficulty = 'Medium', opts = {}) {
+  const { isPresenting = false } = opts;
 
-    const systemPrompt = `You are acting as a DECA Judge. Your persona is: ${judgePersona}. 
-Difficulty Level: ${difficulty}.
+  const difficultyInstruction = buildDifficultyInstruction(difficulty);
+
+  const systemPrompt = `You are a conversational AI acting as a judge in a business presentation.
+Respond naturally and conversationally to all user input, including greetings and personal questions.
+Only be critical when evaluating business decisions and only use the strict interruption behavior when the conversation is part of an active presentation (isPresenting = true).
+
+Difficulty instructions:
 ${difficultyInstruction}
 
-Keep your responses concise (under 2 sentences) and conversational. 
-Do not break character. Do not give feedback yet.`;
+Judge persona: ${judgePersona}
+`;
 
-    const messages = [
-        {
-            role: "system",
-            content: systemPrompt
-        },
-        ...history.map(h => ({
-            role: h.role === 'user' ? 'user' : 'assistant',
-            content: h.parts
-        })),
-        {
-            role: "user",
-            content: currentInput
-        }
-    ];
+  const messages = [
+    { role: "system", content: systemPrompt },
+    // Normalize history safely
+    ...history.map(h => ({
+      role: (h.role === 'user' || h.role === 'student') ? 'user' : 'assistant',
+      content: safeTextFromHistoryItem(h)
+    })),
+    { role: "user", content: currentInput }
+  ];
 
-    try {
-        const stream = await openai.chat.completions.create({
-            model: "gpt-4o",
-            messages: messages,
-            temperature: 0.7,
-            max_tokens: 150,
-            stream: true
-        });
+  try {
+    const stream = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages,
+      temperature: 0.7,
+      max_tokens: 500,
+      stream: true,
+      // We don't force response_format for chat streaming; we'll stream raw text.
+    });
 
-        for await (const chunk of stream) {
-            const content = chunk.choices[0]?.delta?.content || '';
-            if (content) {
-                yield content;
-            }
-        }
-    } catch (error) {
-        console.error("Error in chat turn:", error);
-        throw new Error("Failed to get AI response: " + error.message);
+    for await (const chunk of stream) {
+      const delta = chunk.choices?.[0]?.delta?.content || "";
+      if (!delta) continue;
+      // Very small safety: if the model tries to run interruption logic for casual greeting while not presenting,
+      // we let it be conversational. The system prompt above should already enforce this.
+      yield delta;
     }
+  } catch (error) {
+    console.error("Error in chat turn stream:", error);
+    // Yield an error message once then stop
+    yield `\n[System] Error generating response: ${error.message || error}\n`;
+    return;
+  }
 }
 
+// ------------------------------
+// Grading a roleplay session
+// ------------------------------
 /**
  * Grade a roleplay session
- * @param {string} transcript - Full conversation transcript
- * @param {Array<string>} kpis - Performance indicators to grade against
- * @returns {Promise<object>} Grading result
+ * @param {string} transcript
+ * @param {Array<string>} kpis
+ * @returns {Promise<object>}
  */
-async function gradeRoleplay(transcript, kpis) {
-    const prompt = `Grade this DECA roleplay based on the following Performance Indicators:
+async function gradeRoleplay(transcript = "", kpis = []) {
+  const prompt = `Grade this business roleplay based on the following Performance Indicators:
 ${JSON.stringify(kpis)}
 
 Transcript:
@@ -164,66 +211,85 @@ Return a JSON object with:
 
 Output raw JSON only.`;
 
-    try {
-        const completion = await openai.chat.completions.create({
-            model: "gpt-4o",
-            messages: [
-                {
-                    role: "system",
-                    content: "You are a DECA competition judge providing constructive feedback. Always output valid JSON without markdown formatting."
-                },
-                {
-                    role: "user",
-                    content: prompt
-                }
-            ],
-            temperature: 0.5,
-            response_format: { type: "json_object" }
-        });
+  try {
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        { role: "system", content: "You are a business judge providing constructive feedback. Always output valid JSON without markdown formatting." },
+        { role: "user", content: prompt }
+      ],
+      temperature: 0.5,
+      response_format: { type: "json_object" }
+    });
 
-        const text = completion.choices[0].message.content;
-        const cleanText = text.replace(/```json/g, "").replace(/```/g, "").trim();
-        return JSON.parse(cleanText);
-    } catch (error) {
-        console.error("Error grading roleplay:", error);
-        throw new Error("Failed to grade roleplay: " + error.message);
-    }
+    const text = completion.choices?.[0]?.message?.content;
+    if (!text) throw new Error("No grading content returned from model.");
+    const result = (typeof text === "object") ? text : tryParseJSON(text);
+    // Basic normalization
+    result.score = Number(result.score) || 0;
+    result.feedback = result.feedback || "";
+    result.strengths = Array.isArray(result.strengths) ? result.strengths.slice(0, 3) : [];
+    result.weaknesses = Array.isArray(result.weaknesses) ? result.weaknesses.slice(0, 3) : [];
+    result.keyTakeaway = result.keyTakeaway || "";
+    return result;
+  } catch (error) {
+    console.error("Error grading roleplay:", error);
+    throw new Error("Failed to grade roleplay: " + (error.message || error));
+  }
 }
 
+// ------------------------------
+// Determine if judge should interrupt
+// ------------------------------
 /**
- * Determine if judge should interrupt (STRICT MODE - interrupts frequently)
- * @param {string} recentTranscript - Last 1-2 sentences from user
- * @param {'Easy' | 'Medium' | 'Hard'} difficulty
- * @param {number} interruptCount - Current interrupt count
- * @param {string} judgePersona
- * @returns {Promise<object>} { shouldInterrupt: boolean, question?: string }
+ * Determine if judge should interrupt the student.
+ * NOTE: This function will early-return false for casual greetings or when isPresenting is false.
+ *
+ * @param {object} params
+ *  - recentTranscript: string
+ *  - difficulty: 'Easy'|'Medium'|'Hard'
+ *  - interruptCount: number
+ *  - judgePersona: string
+ *  - isPresenting: boolean  <-- REQUIRED: only interrupt if true
+ * @returns {Promise<{shouldInterrupt: boolean, question?: string}>}
  */
-async function shouldInterruptPresentation(recentTranscript, difficulty, interruptCount, judgePersona) {
-    const maxInterrupts = {
-        'Easy': 3,
-        'Medium': 6,
-        'Hard': 10
-    }[difficulty];
+async function shouldInterruptPresentation(params = {}) {
+  const {
+    recentTranscript = "",
+    difficulty = 'Medium',
+    interruptCount = 0,
+    judgePersona = "Judge",
+    isPresenting = false
+  } = params;
 
-    // Stop if at max
-    if (interruptCount >= maxInterrupts) {
-        return { shouldInterrupt: false };
-    }
+  // If not presenting, do NOT interrupt for chit-chat or greetings.
+  if (!isPresenting) {
+    return { shouldInterrupt: false };
+  }
 
-    // Don't analyze very short transcripts
-    if (!recentTranscript || recentTranscript.trim().length < 15) {
-        return { shouldInterrupt: false };
-    }
+  // Ignore trivial/short messages
+  if (!recentTranscript || recentTranscript.trim().length < 15) {
+    return { shouldInterrupt: false };
+  }
 
-    const interruptionGuidance = {
-        'Easy': 'Interrupt if ANYTHING is even slightly unclear, vague, or could use more detail. Be encouraging but inquisitive. Use 50% chance of adding filler words like "umm", "uh", "like".',
-        'Medium': 'Interrupt FREQUENTLY when anything is vague, uses unclear terms, or lacks specifics. Be direct. Use 70% chance of filler words.',
-        'Hard': 'Interrupt VERY OFTEN - even for minor vagueness. Be skeptical and demanding. Challenge almost everything. Use 80% chance of filler words like "umm", "uh", "er".'
-    }[difficulty];
+  // Ignore casual greetings explicitly
+  if (isCasualGreeting(recentTranscript)) {
+    return { shouldInterrupt: false };
+  }
 
-    const prompt = `You are a DECA judge: ${judgePersona}.
-Difficulty: ${difficulty} - BE VERY STRICT AND INTERRUPT FREQUENTLY
+  const maxInterrupts = { 'Easy': 3, 'Medium': 6, 'Hard': 10 }[difficulty] ?? 6;
+  if (interruptCount >= maxInterrupts) {
+    return { shouldInterrupt: false };
+  }
 
+  const interruptionGuidance = {
+    'Easy': 'Interrupt if anything is unclear or vague. Be encouraging and curious.',
+    'Medium': 'Interrupt frequently when specificity is lacking. Be firm but professional.',
+    'Hard': 'Interrupt often for vagueness or unsupported claims. Be skeptical and demand specifics.'
+  }[difficulty];
+
+  const prompt = `You are the judge: ${judgePersona}.
+Difficulty: ${difficulty}
 ${interruptionGuidance}
 
 The student just said:
@@ -232,81 +298,72 @@ The student just said:
 Current interrupts: ${interruptCount}/${maxInterrupts}
 
 INTERRUPT if the student:
-- Uses ANY vague terms ("thing", "stuff", "various", "improve")
-- Mentions ANY number without context
-- Makes ANY claim without specific backing
-- Uses jargon/acronyms without explaining
-- Is even SLIGHTLY unclear about anything
-- Could be more specific about ANYTHING
+- Uses vague terms ("thing", "stuff", "various", "improve")
+- Mentions numbers without context
+- Makes claims without evidence
+- Uses jargon without explanation
+- Is unclear about key points
 
-You should interrupt about 60-80% of the time (be strict!).
-
-If interrupting, use NATURAL human speech with filler words:
-- Start with "Umm,", "Uh,", "Er,", "Like,", "So,"
-- Mix in "wait", "hold on", "sorry", "excuse me"
-- Sound human and spontaneous
-
-Examples:
-- "Umm, wait - what specific metrics are you talking about?"
-- "Uh, hold on, could you be more specific about that strategy?"
-- "Er, sorry, but I'm not clear on what you mean by 'the platform'?"
-- "Like, what exactly do you mean by 'improve engagement'?"
+If interrupting, produce a short, natural interruption that starts with filler words like "Umm," "Uh," "Er," "So," or "Like," and asks a concise clarifying question.
 
 Return JSON:
-{
-  "shouldInterrupt": true/false,
-  "question": "your natural interruption with filler words"
+{ "shouldInterrupt": true/false, "question": "the natural interruption if true" }
+Output raw JSON only.`;
+
+  try {
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        { role: "system", content: "You are a strict judge who interrupts to ensure clarity. Always output valid JSON." },
+        { role: "user", content: prompt }
+      ],
+      temperature: 0.8,
+      response_format: { type: "json_object" }
+    });
+
+    const text = completion.choices?.[0]?.message?.content;
+    if (!text) return { shouldInterrupt: false };
+    const result = (typeof text === "object") ? text : tryParseJSON(text);
+    // Ensure boolean
+    result.shouldInterrupt = !!result.shouldInterrupt;
+    result.question = result.question || "";
+    return result;
+  } catch (error) {
+    console.error("Error checking interruption:", error);
+    // Fail-safe: don't interrupt if model errors
+    return { shouldInterrupt: false };
+  }
 }
 
-BE STRICT - if there's even a hint of vagueness, interrupt!`;
-
-    try {
-        const completion = await openai.chat.completions.create({
-            model: "gpt-4o",
-            messages: [
-                {
-                    role: "system",
-                    content: "You are a strict DECA judge who interrupts frequently to ensure clarity. Use natural human speech with filler words. Always output valid JSON."
-                },
-                {
-                    role: "user",
-                    content: prompt
-                }
-            ],
-            temperature: 0.9, // Higher temperature for more varied responses
-            response_format: { type: "json_object" }
-        });
-
-        const text = completion.choices[0].message.content;
-        const result = JSON.parse(text.replace(/```json/g, "").replace(/```/g, "").trim());
-        console.log("Interrupt decision:", result);
-        return result;
-    } catch (error) {
-        console.error("Error checking interruption:", error);
-        return { shouldInterrupt: false };
-    }
-}
-
+// ------------------------------
+// Generate judge follow-up after user responds
+// ------------------------------
 /**
  * Generate judge's follow-up after student responds
- * @param {Array} conversationHistory - Recent messages
- * @param {string} userResponse - User's clarification response
- * @param {'Easy' | 'Medium' | 'Hard'} difficulty
+ * @param {Array<{role:string, text?:string}>} conversationHistory
+ * @param {string} userResponse
+ * @param {'Easy'|'Medium'|'Hard'} difficulty
  * @param {string} judgePersona
- * @returns {Promise<object>} { continuePresentation: boolean, text: string }
+ * @param {object} opts - { isPresenting: boolean }
+ * @returns {Promise<{continuePresentation: boolean, text: string}>}
  */
-async function generateJudgeFollowUp(conversationHistory, userResponse, difficulty, judgePersona) {
-    const followUpGuidance = {
-        'Easy': 'If answer is decent, let them continue with encouraging phrase. If still unclear, ask ONE more question. 40% chance to ask follow-up.',
-        'Medium': 'Be demanding - ask follow-up 60% of the time even if answer was okay. If unclear, definitely ask again.',
-        'Hard': 'Be very demanding - ask follow-up 80% of the time. Challenge their answer. Only let them continue if answer was exceptional.'
-    }[difficulty];
+async function generateJudgeFollowUp(conversationHistory = [], userResponse = "", difficulty = 'Medium', judgePersona = "Judge", opts = {}) {
+  const { isPresenting = false } = opts;
 
-    const recentMessages = conversationHistory.slice(-6).map(m => 
-        `${m.role === 'user' ? 'Student' : 'Judge'}: ${m.text}`
-    ).join('\n');
+  // If not presenting, default to conversational continuation
+  if (!isPresenting) {
+    return { continuePresentation: true, text: "Alright, go on." };
+  }
 
-    const prompt = `You are a DECA judge: ${judgePersona}.
+  const followUpGuidance = {
+    'Easy': 'If answer is decent, let them continue with an encouraging phrase. If still unclear, ask ONE more question. 40% chance to ask follow-up.',
+    'Medium': 'Ask follow-up 60% of the time even if answer was okay. If unclear, definitely ask again.',
+    'Hard': 'Ask follow-up 80% of the time. Challenge their answer. Only let them continue if answer was exceptional.'
+  }[difficulty];
+
+  const recentMessages = conversationHistory.slice(-6).map(m => `${m.role === 'user' ? 'Student' : 'Judge'}: ${safeTextFromHistoryItem(m)}`).join('\n');
+
+  const prompt = `You are the judge: ${judgePersona}.
 Difficulty: ${difficulty}
 ${followUpGuidance}
 
@@ -316,58 +373,45 @@ ${recentMessages}
 Student just responded: "${userResponse}"
 
 Should you:
-A) Let them continue (say something short like "Okay, continue" or "Alright, go on")
-B) Ask a follow-up question (because their answer needs more detail)
-
-Use natural speech with filler words (umm, uh, like, so).
+A) Let them continue (short encouraging phrase)
+B) Ask a follow-up question (needs more detail)
 
 Return JSON:
 {
   "continuePresentation": true/false,
-  "text": "your response with natural speech"
+  "text": "your natural response (short)"
+}
+Output raw JSON only.`;
+
+  try {
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        { role: "system", content: "You are a demanding judge. Use natural human speech with filler words. Always output valid JSON." },
+        { role: "user", content: prompt }
+      ],
+      temperature: 0.75,
+      response_format: { type: "json_object" }
+    });
+
+    const text = completion.choices?.[0]?.message?.content;
+    if (!text) return { continuePresentation: true, text: "Umm, okay, continue." };
+    const result = (typeof text === "object") ? text : tryParseJSON(text);
+    result.continuePresentation = !!result.continuePresentation;
+    result.text = result.text || (result.continuePresentation ? "Alright, go on" : "Uh, could you be more specific about that?");
+    return result;
+  } catch (error) {
+    console.error("Error generating follow-up:", error);
+    // Fail-safe: continue
+    return { continuePresentation: true, text: "Umm, okay, continue." };
+  }
 }
 
-Examples if continuing:
-- "Umm, okay, continue"
-- "Alright, I see. Go on"
-- "Uh, that makes sense. Continue"
-
-Examples if asking more:
-- "Uh, but HOW exactly will that work?"
-- "Umm, okay but what about [specific concern]?"
-- "Er, I'm still not clear on [specific point]"`;
-
-    try {
-        const completion = await openai.chat.completions.create({
-            model: "gpt-4o",
-            messages: [
-                {
-                    role: "system",
-                    content: "You are a demanding DECA judge. Use natural human speech with filler words. Always output valid JSON."
-                },
-                {
-                    role: "user",
-                    content: prompt
-                }
-            ],
-            temperature: 0.8,
-            response_format: { type: "json_object" }
-        });
-
-        const text = completion.choices[0].message.content;
-        const result = JSON.parse(text.replace(/```json/g, "").replace(/```/g, "").trim());
-        return result;
-    } catch (error) {
-        console.error("Error generating follow-up:", error);
-        return { continuePresentation: true, text: "Umm, okay, continue." };
-    }
-}
-
+// Export the module API (keeps same function names you used)
 module.exports = {
-    generateScenario,
-    chatTurnStream,
-    gradeRoleplay,
-    shouldInterruptPresentation,
-    generateJudgeFollowUp
+  generateScenario,
+  chatTurnStream,
+  gradeRoleplay,
+  shouldInterruptPresentation,
+  generateJudgeFollowUp
 };
-

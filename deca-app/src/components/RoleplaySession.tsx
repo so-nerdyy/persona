@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Mic, Square, User, Bot, ChevronDown, ChevronUp, Activity, Radio, FileText, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Mic, Square, User, Bot, ChevronDown, ChevronUp, Activity, FileText, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { RoleplayScenario } from '../services/ai';
 import type { Message, Note } from '../hooks/useRoleplay';

@@ -22,7 +22,7 @@ export class SpeechService {
   private recognition: SpeechRecognition | null = null;
   private synthesis: SpeechSynthesis = window.speechSynthesis;
   private isListening: boolean = false;
-  private restartTimeoutId: NodeJS.Timeout | null = null;
+  private restartTimeoutId: number | null = null;
 
   constructor() {
     const SpeechRecognition =
