@@ -36,7 +36,7 @@ export const useRoleplay = () => {
     });
 
     // Presentation state
-    const [isPresenting, setIsPresenting] = useState(false);
+    const [_isPresenting, setIsPresenting] = useState(false);
 
     // Interruption state
     const [_interruptCount, setInterruptCount] = useState(0);
@@ -237,7 +237,7 @@ export const useRoleplay = () => {
         const currentScenario = scenarioRef.current;
         const currentDifficulty = difficultyRef.current;
         const currentInterruptCount = interruptCountRef.current;
-        
+
         const maxInterrupts = { 'Easy': 3, 'Medium': 6, 'Hard': 10 }[currentDifficulty];
 
         console.log("🔍 Interrupt check details:", {
@@ -281,7 +281,7 @@ export const useRoleplay = () => {
                 interruptCount: currentInterruptCount,
                 judgePersona: currentScenario.judgePersona
             });
-            
+
             const result = await checkShouldInterrupt(
                 recentText,
                 currentDifficulty,
@@ -307,10 +307,10 @@ export const useRoleplay = () => {
 
     const handleJudgeInterruption = useCallback((question: string) => {
         console.log("👨‍⚖️ Judge interrupting with question:", question);
-        
+
         console.log("🛑 Stopping speech recognition for judge...");
         speechService.stopListening();
-        
+
         setIsJudgeSpeaking(true);
         setIsWaitingForClarification(true);
         setInterruptCount(prev => {
@@ -319,10 +319,10 @@ export const useRoleplay = () => {
             console.log("📈 Interrupt count increased to:", newCount);
             return newCount;
         });
-        
+
         // Add judge question to messages
         setMessages(prev => [...prev, { role: 'model', text: question }]);
-        
+
         // Speak the question
         console.log("🔊 Judge speaking question...");
         speechService.speak(question, () => {
@@ -338,10 +338,10 @@ export const useRoleplay = () => {
 
     const handleClarificationResponse = useCallback(async (userResponse: string) => {
         console.log("💬 User clarification:", userResponse);
-        
+
         const currentScenario = scenarioRef.current;
         const currentDifficulty = difficultyRef.current;
-        
+
         if (!currentScenario) {
             console.error("❌ No scenario for follow-up");
             return;
@@ -367,7 +367,7 @@ export const useRoleplay = () => {
             speechService.speak(followUp.text, () => {
                 console.log("✅ Judge finished speaking follow-up");
                 setIsJudgeSpeaking(false);
-                
+
                 if (followUp.continuePresentation) {
                     console.log("✅ Judge letting student continue presentation");
                     setIsWaitingForClarification(false);
@@ -405,19 +405,19 @@ export const useRoleplay = () => {
         console.log("🏁 Finishing roleplay...");
         console.log("📊 Full transcript length:", fullTranscript.length);
         console.log("📝 Full transcript:", fullTranscript);
-        
+
         setGameState('GRADING');
         speechService.stopListening();
         speechService.cancelSpeech();
         if (silenceTimer.current) clearTimeout(silenceTimer.current);
-        
+
         if (scenario && fullTranscript.trim().length > 0) {
             try {
                 console.log("🎯 Calling grading API with KPIs:", scenario.performanceIndicators);
                 const gradingResult = await gradeRoleplay(fullTranscript, scenario.performanceIndicators);
                 console.log("✅ Grading result received:", gradingResult);
                 setGrade(gradingResult);
-                
+
                 // Save roleplay to backend
                 try {
                     console.log("💾 Saving roleplay to backend...");
@@ -452,19 +452,19 @@ export const useRoleplay = () => {
 
     const skipPreparation = () => {
         console.log("▶️ Starting presentation phase...");
-        
+
         // Set presentation time from scenario
         const presentationTime = (scenario?.presentationTimeMinutes || 10) * 60;
         setPresentationTimeLeft(presentationTime);
-        
+
         // Add initial judge message
         const initialMessage = `Good ${getTimeOfDay()}! I'm your judge today. You may begin your presentation whenever you're ready. You have ${scenario?.presentationTimeMinutes || 10} minutes.`;
         console.log("👨‍⚖️ Initial judge message:", initialMessage);
-        
+
         setMessages([{ role: 'model', text: initialMessage }]);
         setFullTranscript('');
         setGameState('PLAYING');
-        
+
         // Speak the initial message, then start listening
         speechService.speak(initialMessage, () => {
             console.log("🎤 Starting to listen for presentation...");
