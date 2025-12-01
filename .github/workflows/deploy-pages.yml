@@ -1,0 +1,52 @@
+name: Deploy Frontend to GitHub Pages
+
+on:
+  # Runs on pushes to the main branch
+  push:
+    branches:
+      - main  # Change this if your main branch is "master"
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    # Grant permissions for the job to write to your repo's gh-pages branch
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+
+    steps:
+      # 1. Checks out your repository code
+      - name: Checkout 🛎️
+        uses: actions/checkout@v4
+
+      # 2. Sets up Node.js for the build
+      - name: Set up Node.js 🟩
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20' # Change if you need a different version
+          cache: 'npm'
+          cache-dependency-path: './deca-app/package-lock.json' # Path to your lock file
+
+      # 3. Installs dependencies and builds your site
+      - name: Install and Build 🔨
+        working-directory: ./deca-app  # <--- Tells it to go into your frontend folder
+        run: |
+          npm install
+          npm run build
+
+      # 4. Configures GitHub Pages
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      # 5. Uploads the build output (the 'dist' folder)
+      - name: Upload artifact 📦
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: './deca-app/dist' # <--- Tells it where your 'dist' folder is
+
+      # 6. Deploys to GitHub Pages
+      - name: Deploy to GitHub Pages 🚀
+        id: deployment
+        uses: actions/deploy-pages@v4
