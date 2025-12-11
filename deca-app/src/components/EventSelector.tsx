@@ -1,44 +1,7 @@
-import React from 'react';
-import { Briefcase, TrendingUp, Users, ShoppingBag, DollarSign, ArrowRight } from 'lucide-react';
+import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-
-const events = [
-    {
-        id: 'marketing',
-        name: 'Marketing Management',
-        icon: ShoppingBag,
-        color: 'from-pink-500 to-rose-500',
-        desc: 'Product promotion, pricing strategies, and market research.'
-    },
-    {
-        id: 'finance',
-        name: 'Business Finance',
-        icon: DollarSign,
-        color: 'from-green-500 to-emerald-600',
-        desc: 'Financial planning, investment analysis, and accounting.'
-    },
-    {
-        id: 'hospitality',
-        name: 'Hospitality & Tourism',
-        icon: Users,
-        color: 'from-blue-500 to-cyan-500',
-        desc: 'Customer service, travel planning, and event management.'
-    },
-    {
-        id: 'entrepreneurship',
-        name: 'Entrepreneurship',
-        icon: TrendingUp,
-        color: 'from-purple-500 to-indigo-600',
-        desc: 'Business startup, innovation, and growth strategies.'
-    },
-    {
-        id: 'management',
-        name: 'Business Management',
-        icon: Briefcase,
-        color: 'from-orange-500 to-amber-500',
-        desc: 'HR, operations, and strategic leadership.'
-    },
-];
+import { events, categories, getEventsByCategory, searchEvents } from '../data/events';
+import { ArrowRight, Search, Filter } from 'lucide-react';
 
 interface EventSelectorProps {
     onSelect: (eventId: string) => void;
@@ -61,48 +24,141 @@ const item = {
 };
 
 export const EventSelector: React.FC<EventSelectorProps> = ({ onSelect, disabled }) => {
+    const [selectedCategory, setSelectedCategory] = useState('all');
+    const [searchQuery, setSearchQuery] = useState('');
+    
+    const displayedEvents = searchQuery 
+        ? searchEvents(searchQuery)
+        : getEventsByCategory(selectedCategory);
+
     return (
-        <motion.div
-            variants={container}
-            initial="hidden"
-            animate="show"
-            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-6xl mx-auto p-4"
-        >
-            {events.map((evt) => (
-                <motion.button
-                  key={evt.id}
-                  variants={item}
-                  onClick={() => onSelect(evt.name)}
-                  disabled={disabled}
-                  whileHover={{ scale: 1.02, y: -5 }}
-                  whileTap={{ scale: 0.98 }}
-                  className="group relative overflow-hidden rounded-2xl bg-white/5 p-1 text-left transition-all hover:bg-white/10 border border-white/10 hover:border-white/20 shadow-lg hover:shadow-xl touch-target"
-                >
-                    <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+        <div className="max-w-6xl mx-auto p-6">
+            {/* Search and Filter Section */}
+            <div className="mb-6 space-y-3">
+                <div className="relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
+                    <input
+                        type="text"
+                        placeholder="Search events..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="w-full pl-10 pr-4 py-2.5 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                    />
+                </div>
 
-                    <div className="relative h-full bg-[#0a0a0a]/80 backdrop-blur-sm rounded-xl p-6 flex flex-col overflow-hidden">
-                        {/* Background Icon Blob */}
-                        <div className={`absolute -right-6 -top-6 w-32 h-32 bg-gradient-to-br ${evt.color} opacity-10 rounded-full blur-2xl group-hover:opacity-20 transition-all duration-500`} />
+                {/* Category Filter */}
+                <div className="flex flex-wrap gap-2">
+                    {categories.map((category) => {
+                        const IconComponent = category.icon;
+                        return (
+                            <button
+                                key={category.id}
+                                onClick={() => {
+                                    setSelectedCategory(category.id);
+                                    setSearchQuery('');
+                                }}
+                                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                                    selectedCategory === category.id
+                                        ? 'bg-blue-600 text-white'
+                                        : 'bg-white/5 text-gray-300 hover:bg-white/10 hover:text-white'
+                                }`}
+                            >
+                                <IconComponent size={14} />
+                                {category.name}
+                                <span className="text-xs bg-white/20 px-1.5 py-0.5 rounded-full">
+                                    {category.id === 'all' ? events.length : getEventsByCategory(category.id).length}
+                                </span>
+                            </button>
+                        );
+                    })}
+                </div>
+            </div>
 
-                        <div className={`inline-flex p-3 rounded-xl bg-gradient-to-br ${evt.color} text-white mb-4 shadow-lg w-fit group-hover:scale-110 transition-transform duration-300`}>
-                            <evt.icon size={24} />
-                        </div>
+            {/* Events Grid */}
+            <motion.div
+                variants={container}
+                initial="hidden"
+                animate="show"
+                className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
+            >
+                {displayedEvents.map((event) => {
+                    const IconComponent = event.icon;
+                    return (
+                        <motion.button
+                            key={event.id}
+                            variants={item}
+                            onClick={() => onSelect(event.abbreviation)}
+                            disabled={disabled}
+                            whileHover={{ scale: 1.02, y: -2 }}
+                            whileTap={{ scale: 0.98 }}
+                            className="group relative overflow-hidden rounded-xl bg-white/5 p-1 text-left transition-all hover:bg-white/10 border border-white/10 hover:border-white/20 shadow-lg hover:shadow-xl"
+                        >
+                            <div className="relative h-full bg-[#0a0a0a]/80 backdrop-blur-sm rounded-lg p-4 flex flex-col">
+                                {/* Background Icon Blob */}
+                                <div className={`absolute -right-4 -top-4 w-20 h-20 bg-gradient-to-br ${event.color} opacity-10 rounded-full blur-xl group-hover:opacity-20 transition-all duration-300`} />
 
-                        <h3 className="text-lg xs:text-xl font-bold text-white mb-2 font-display group-hover:text-transparent group-hover:bg-clip-text group-hover:bg-gradient-to-r group-hover:from-white group-hover:to-gray-300 transition-all">
-                          {evt.name}
-                        </h3>
+                                {/* Header */}
+                                <div className="flex items-start gap-3 mb-3">
+                                    <div className={`inline-flex p-2 rounded-lg bg-gradient-to-br ${event.color} text-white shadow-lg group-hover:scale-110 transition-transform duration-300`}>
+                                        <IconComponent size={18} />
+                                    </div>
+                                    <div className="flex-grow min-w-0">
+                                        <h3 className="text-sm font-bold text-white font-display truncate">
+                                            {event.shortName}
+                                        </h3>
+                                        <span className="text-xs bg-blue-600 text-white px-2 py-0.5 rounded-full font-mono mt-1 inline-block">
+                                            {event.abbreviation}
+                                        </span>
+                                    </div>
+                                </div>
 
-                        <p className="text-xs xs:text-sm text-gray-400 mb-4 xs:mb-6 line-clamp-2 leading-relaxed">
-                          {evt.desc}
-                        </p>
+                                {/* Description */}
+                                <p className="text-xs text-gray-400 mb-3 line-clamp-2 leading-relaxed">
+                                    {event.description}
+                                </p>
 
-                        <div className="mt-auto flex items-center text-xs xs:text-sm font-medium text-gray-500 group-hover:text-white transition-colors">
-                          <span>Start Roleplay</span>
-                          <ArrowRight size={14} className="ml-2 opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all" />
-                        </div>
-                    </div>
-                </motion.button>
-            ))}
-        </motion.div>
+                                {/* Skills */}
+                                <div className="flex flex-wrap gap-1 mb-3">
+                                    {event.skills.slice(0, 3).map((skill, index) => (
+                                        <span key={index} className="text-xs bg-white/10 text-gray-300 px-2 py-0.5 rounded-full">
+                                            {skill}
+                                        </span>
+                                    ))}
+                                </div>
+
+                                {/* Footer */}
+                                <div className="mt-auto flex items-center justify-between">
+                                    <span className={`text-xs px-2 py-1 rounded-full font-medium ${
+                                        event.difficulty === 'Beginner' ? 'bg-green-600/20 text-green-400' :
+                                        event.difficulty === 'Intermediate' ? 'bg-yellow-600/20 text-yellow-400' :
+                                        'bg-red-600/20 text-red-400'
+                                    }`}>
+                                        {event.difficulty}
+                                    </span>
+                                    <div className="flex items-center text-xs font-medium text-gray-500 group-hover:text-white transition-colors">
+                                        <span>Start</span>
+                                        <ArrowRight size={12} className="ml-1 opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all" />
+                                    </div>
+                                </div>
+                            </div>
+                        </motion.button>
+                    );
+                })}
+            </motion.div>
+
+            {/* No Results */}
+            {displayedEvents.length === 0 && (
+                <div className="text-center py-12">
+                    <Filter className="mx-auto text-gray-400 mb-4" size={40} />
+                    <h3 className="text-lg font-semibold text-white mb-2">No events found</h3>
+                    <p className="text-gray-400 text-sm">
+                        {searchQuery 
+                            ? `No events match "${searchQuery}". Try a different search term.`
+                            : 'No events in this category.'
+                        }
+                    </p>
+                </div>
+            )}
+        </div>
     );
 };
